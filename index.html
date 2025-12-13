@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="km">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Readom Student Picker - Firebase</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font for Khmer Language (Google Fonts) -->
+    <link href="https://fonts.googleapis.com/css2?family=Kantumruy+Pro:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- React & ReactDOM & Babel -->
+    <script type="importmap">
+        {
+            "imports": {
+                "react": "https://esm.sh/react@18.2.0",
+                "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+                "firebase/app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
+                "firebase/auth": "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js",
+                "firebase/firestore": "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js",
+                "firebase/database": "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js",
+                "lucide-react": "https://esm.sh/lucide-react@0.294.0"
+            }
+        }
+    </script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        body {
+            font-family: 'Kantumruy Pro', sans-serif;
+        }
+        /* Custom Toggle Switch Style */
+        .toggle-checkbox:checked {
+            right: 0;
+            border-color: #68D391;
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #68D391;
+        }
+        /* Prevent selection for secure inputs */
+        .no-select {
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100">
+
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useRef } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { initializeApp } from 'firebase/app';
+        import { getAuth, signInAnonymously } from 'firebase/auth';
+        import { 
+            getFirestore, 
+            collectionGroup, 
+            getDocs, 
+            query, 
+            where, 
+            limit 
+        } from 'firebase/firestore';
+        import { getDatabase, ref, update, onValue } from 'firebase/database';
+        import { 
+            Users, Shuffle, RefreshCw, Trophy, UserCircle, 
+            Settings, AlertTriangle, Database, Clock, 
+            Calendar, CheckCircle2, Send, X, Save, MessageSquare, 
+            ToggleLeft, ToggleRight, UserMinus, RotateCcw, Cloud,
+            Eye, EyeOff, Lock, Filter, Briefcase, Users as UsersIcon
+        } from 'lucide-react';
+
+        // --- Firebase Configuration ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyCgc3fq9mDHMCjTRRHD3BPBL31JkKZgXFc",
+            authDomain: "checkme-10e18.firebaseapp.com",
+            databaseURL: "https://checkme-10e18-default-rtdb.firebaseio.com",
+            projectId: "checkme-10e18",
+            storageBucket: "checkme-10e18.firebasestorage.app",
+            messagingSenderId: "1030447497157",
+            appId: "1:1030447497157:web:9792086df1e864559fd5ac",
+            measurementId: "G-QCJ2JH4WH6"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const rtdb = getDatabase(app);
+
+        // --- Helpers ---
+        const getTodayDateStr = () => {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+
+        const getCurrentShift = () => {
+            const hour = new Date().getHours();
+            if (hour >= 6 && hour < 12) return "វេនព្រឹក"; 
+            if (hour >= 12 && hour < 17) return "វេនរសៀល"; 
+            if (hour >= 17) return "វេនយប់"; 
+            return "ក្រៅម៉ោង";
+        };
+
+        // --- Main Component ---
+        function RandomStudentApp() {
+            const [allStudents, setAllStudents] = useState([]); 
+            const [playableStudents, setPlayableStudents] = useState([]); 
+            
+            const [currentName, setCurrentName] = useState("ត្រៀមខ្លួន...");
+            const [winner, setWinner] = useState(null);
+            const [isSpinning, setIsSpinning] = useState(false);
+            const [loading, setLoading] = useState(true);
+            const [useDemoData, setUseDemoData] = useState(false);
+            const [error, setError] = useState(null);
+            const [debugInfo, setDebugInfo] = useState("");
+            const [sendingTelegram, setSendingTelegram] = useState(false);
+            const [manualSendVisible, setManualSendVisible] = useState(false);
+
+            // --- Settings State ---
+            const [showSettings, setShowSettings] = useState(false);
+            const [botToken, setBotToken] = useState("");
+            const [chatId, setChatId] = useState("");
+            const [customMessage, setCustomMessage] = useState("");
+            
+            // Core Settings
+            const [autoSendTelegram, setAutoSendTelegram] = useState(true);
+            const [filterUniqueWinners, setFilterUniqueWinners] = useState(false);
+            const [todaysWinners, setTodaysWinners] = useState([]);
+            
+            // --- NEW FILTERS ---
+            const [filterDeptTraining, setFilterDeptTraining] = useState(false);
+            const [filterDeptITGen2, setFilterDeptITGen2] = useState(false);
+            const [filterGroupITSupport, setFilterGroupITSupport] = useState(false);
+            const [filterGroupDRB, setFilterGroupDRB] = useState(false);
+
+            const [isSaving, setIsSaving] = useState(false);
+            const [showBotToken, setShowBotToken] = useState(false);
+            const [settingsLoaded, setSettingsLoaded] = useState(false);
+
+            const intervalRef = useRef(null);
+
+            // --- 1. Load Settings from Realtime Database ---
+            useEffect(() => {
+                const settingsRef = ref(rtdb, 'settings/appConfig');
+                
+                const unsubscribe = onValue(settingsRef, (snapshot) => {
+                    const data = snapshot.val();
+                    if (data) {
+                        if (data.botToken) setBotToken(data.botToken);
+                        if (data.chatId) setChatId(data.chatId);
+                        if (data.customMessage) setCustomMessage(data.customMessage);
+                        if (data.autoSendTelegram !== undefined) setAutoSendTelegram(data.autoSendTelegram);
+                        if (data.filterUniqueWinners !== undefined) setFilterUniqueWinners(data.filterUniqueWinners);
+                        
+                        // Load New Filters
+                        if (data.filterDeptTraining !== undefined) setFilterDeptTraining(data.filterDeptTraining);
+                        if (data.filterDeptITGen2 !== undefined) setFilterDeptITGen2(data.filterDeptITGen2);
+                        if (data.filterGroupITSupport !== undefined) setFilterGroupITSupport(data.filterGroupITSupport);
+                        if (data.filterGroupDRB !== undefined) setFilterGroupDRB(data.filterGroupDRB);
+                    }
+                    setSettingsLoaded(true);
+                });
+
+                const todayKey = `winners_${getTodayDateStr()}`;
+                const savedWinners = localStorage.getItem(todayKey);
+                if (savedWinners) setTodaysWinners(JSON.parse(savedWinners));
+
+                return () => unsubscribe();
+            }, []);
+
+            // --- FILTERING LOGIC ---
+            useEffect(() => {
+                let filtered = allStudents;
+
+                // 1. Filter Unique (មិនហៅឈ្មោះដែលធ្លាប់ហៅ)
+                if (filterUniqueWinners) {
+                    filtered = filtered.filter(s => !todaysWinners.includes(s.name));
+                }
+
+                // 2. Filter by Department (ផ្នែកការងារ)
+                const activeDeptFilters = [];
+                if (filterDeptTraining) activeDeptFilters.push("Training_ជំនួយការលោកគ្រូដារ៉ូ");
+                if (filterDeptITGen2) activeDeptFilters.push("រៀនវគ្គបណ្ដុះបណ្ដាលIT_ជំនាន់២");
+                
+                if (activeDeptFilters.length > 0) {
+                    filtered = filtered.filter(s => activeDeptFilters.includes(s.department));
+                }
+
+                // 3. Filter by Group (ក្រុម)
+                const activeGroupFilters = [];
+                if (filterGroupITSupport) activeGroupFilters.push("IT Support");
+                if (filterGroupDRB) activeGroupFilters.push("DRB");
+
+                if (activeGroupFilters.length > 0) {
+                    filtered = filtered.filter(s => activeGroupFilters.includes(s.group));
+                }
+
+                setPlayableStudents(filtered);
+            }, [
+                allStudents, 
+                filterUniqueWinners, 
+                todaysWinners, 
+                filterDeptTraining, 
+                filterDeptITGen2, 
+                filterGroupITSupport, 
+                filterGroupDRB
+            ]);
+
+            // --- 2. Update Specific Setting (Safer than Set) ---
+            const updateSetting = async (updates) => {
+                try {
+                    await update(ref(rtdb, 'settings/appConfig'), {
+                        ...updates,
+                        updatedAt: new Date().toISOString()
+                    });
+                } catch (err) {
+                    console.error("Error updating setting:", err);
+                    alert("មានបញ្ហាក្នុងការរក្សាទុកការកំណត់");
+                }
+            };
+
+            const handleSaveSettingsButton = async () => {
+                setIsSaving(true);
+                await updateSetting({
+                    botToken,
+                    chatId,
+                    customMessage,
+                    autoSendTelegram,
+                    filterUniqueWinners,
+                    filterDeptTraining,
+                    filterDeptITGen2,
+                    filterGroupITSupport,
+                    filterGroupDRB
+                });
+                setIsSaving(false);
+                setShowSettings(false);
+            };
+
+            // Toggle Functions
+            const toggleAutoSend = () => {
+                const newValue = !autoSendTelegram;
+                setAutoSendTelegram(newValue);
+                updateSetting({ autoSendTelegram: newValue });
+            };
+
+            const toggleFilterUnique = () => {
+                const newValue = !filterUniqueWinners;
+                setFilterUniqueWinners(newValue);
+                updateSetting({ filterUniqueWinners: newValue });
+            };
+
+            // New Toggle Wrappers
+            const toggleDeptTraining = () => {
+                const newValue = !filterDeptTraining;
+                setFilterDeptTraining(newValue);
+                updateSetting({ filterDeptTraining: newValue });
+            };
+            const toggleDeptITGen2 = () => {
+                const newValue = !filterDeptITGen2;
+                setFilterDeptITGen2(newValue);
+                updateSetting({ filterDeptITGen2: newValue });
+            };
+            const toggleGroupITSupport = () => {
+                const newValue = !filterGroupITSupport;
+                setFilterGroupITSupport(newValue);
+                updateSetting({ filterGroupITSupport: newValue });
+            };
+            const toggleGroupDRB = () => {
+                const newValue = !filterGroupDRB;
+                setFilterGroupDRB(newValue);
+                updateSetting({ filterGroupDRB: newValue });
+            };
+
+            const handleMessageBlur = () => {
+                updateSetting({ customMessage });
+            };
+
+            const clearTodaysWinners = () => {
+                if (confirm("តើអ្នកច្បាស់ទេថាចង់លុបប្រវត្តិអ្នកឈ្នះសម្រាប់ថ្ងៃនេះ?")) {
+                    setTodaysWinners([]);
+                    localStorage.removeItem(`winners_${getTodayDateStr()}`);
+                }
+            };
+
+            // --- Telegram Sending Function ---
+            const sendToTelegram = async (studentName) => {
+                const cleanToken = botToken.trim();
+                const cleanChatId = chatId.trim();
+
+                if (!cleanToken || !cleanChatId) {
+                    if (manualSendVisible) alert("សូមបញ្ចូល Bot Token និង Chat ID នៅក្នុង Settings ជាមុនសិន!");
+                    return;
+                }
+                
+                setSendingTelegram(true);
+                let message = studentName;
+                if (customMessage) message += ` ${customMessage}`;
+
+                const url = `https://api.telegram.org/bot${cleanToken}/sendMessage`;
+
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ chat_id: cleanChatId, text: message })
+                    });
+                    const resData = await response.json();
+                    if (resData.ok) {
+                        console.log("Message sent to Telegram successfully!");
+                        setManualSendVisible(false);
+                    } else {
+                        console.error("Telegram Error:", resData);
+                        alert(`បរាជ័យ: ${resData.description || "Unknown error"}`);
+                    }
+                } catch (error) {
+                    console.error("Network Error:", error);
+                    alert("មានបញ្ហា Network មិនអាចភ្ជាប់ទៅ Telegram បានទេ។");
+                } finally {
+                    setSendingTelegram(false);
+                }
+            };
+
+            // --- Fetch Students Logic ---
+            useEffect(() => {
+                const fetchStudents = async () => {
+                    setLoading(true);
+                    setError(null);
+                    setDebugInfo("");
+                    
+                    const todayStr = getTodayDateStr();
+                    const currentShift = getCurrentShift();
+                    
+                    setDebugInfo(`កំពុងស្វែងរក: ថ្ងៃទី ${todayStr} | វេន: ${currentShift}`);
+
+                    try {
+                        await signInAnonymously(auth);
+
+                        const recordsQuery = query(
+                            collectionGroup(db, 'records'),
+                            where('date', '==', todayStr),
+                            limit(100)
+                        );
+
+                        const querySnapshot = await getDocs(recordsQuery);
+                        
+                        const fetchedStudents = [];
+                        const uniqueNames = new Set();
+                        let totalRecordsFound = 0;
+
+                        querySnapshot.forEach((doc) => {
+                            totalRecordsFound++;
+                            const data = doc.data();
+                            const name = data.employeeName || data.name;
+                            const studentShift = data.shift || "ពេញម៉ោង";
+                            
+                            const checkIn = data.checkIn;
+                            const checkOut = data.checkOut;
+
+                            if (!checkIn) return; 
+                            const checkInStr = String(checkIn).trim();
+                            if (checkInStr === "" || checkInStr === "_" || checkInStr === "ឈឺ") return;
+
+                            if (checkOut) {
+                                const checkOutStr = String(checkOut).trim();
+                                if (checkOutStr !== "" && checkOutStr !== "_") { return; }
+                            }
+
+                            if (name && !uniqueNames.has(name)) {
+                                const dbShiftLower = studentShift.toLowerCase();
+                                let isMatch = false;
+
+                                if (dbShiftLower.includes("ពេញម៉ោង") || dbShiftLower.includes("full")) { isMatch = true; } 
+                                else if (currentShift === "វេនព្រឹក" && (dbShiftLower.includes("ព្រឹក") || dbShiftLower.includes("morning") || dbShiftLower.includes("មួយព្រឹក"))) { isMatch = true; }
+                                else if (currentShift === "វេនរសៀល" && (dbShiftLower.includes("រសៀល") || dbShiftLower.includes("afternoon") || dbShiftLower.includes("មួយរសៀល"))) { isMatch = true; }
+                                else if (currentShift === "វេនយប់" && (dbShiftLower.includes("យប់") || dbShiftLower.includes("evening") || dbShiftLower.includes("night") || dbShiftLower.includes("ពេលយប់"))) { isMatch = true; }
+                                else if (studentShift === currentShift) { isMatch = true; }
+
+                                if (isMatch) {
+                                    uniqueNames.add(name);
+                                    // បន្ថែម department និង group ដើម្បីយកទៅ Filter
+                                    fetchedStudents.push({ 
+                                        id: doc.id, 
+                                        name: name, 
+                                        gender: data.gender || 'N/A', 
+                                        shift: studentShift,
+                                        department: data.department || '',
+                                        group: data.group || ''
+                                    });
+                                }
+                            }
+                        });
+
+                        if (fetchedStudents.length > 0) {
+                            setAllStudents(fetchedStudents); 
+                            setUseDemoData(false);
+                            setDebugInfo(`រកឃើញ ${fetchedStudents.length} នាក់ (កំពុងមានវត្តមាន)។`);
+                        } else {
+                            console.warn(`No active students found.`);
+                            let msg = "";
+                            if (totalRecordsFound > 0) {
+                                msg = `មានទិន្នន័យថ្ងៃនេះ (${totalRecordsFound}) ប៉ុន្តែប្រហែលជាពួកគេ "CheckOut" អស់ហើយ ឬ "ឈឺ" ឬខុសវេន។`;
+                            } else {
+                                msg = `មិនមានទិន្នន័យសម្រាប់ថ្ងៃនេះ (${todayStr}) ទេ។`;
+                            }
+                            setError(msg);
+                            setAllStudents([]);
+                            setUseDemoData(false);
+                        }
+
+                    } catch (err) {
+                        console.error("Firestore Error:", err);
+                        let errorMsg = "មានបញ្ហាក្នុងការភ្ជាប់។";
+                        if (err.code === 'permission-denied') errorMsg = "គ្មានសិទ្ធិ (Permission Denied)។";
+                        else if (err.code === 'failed-precondition') errorMsg = "ត្រូវការបង្កើត Index។";
+                        setError(errorMsg);
+                        setAllStudents([]); 
+                        setUseDemoData(false);
+                    } finally {
+                        setLoading(false);
+                    }
+                };
+
+                fetchStudents();
+            }, []);
+
+            const handleSpin = () => {
+                if (playableStudents.length === 0 || isSpinning) return;
+
+                setIsSpinning(true);
+                setWinner(null);
+                setSendingTelegram(false);
+                setManualSendVisible(false);
+                let counter = 0;
+                
+                const calculatedSpins = playableStudents.length * 3;
+                const totalSpins = calculatedSpins > 60 ? calculatedSpins : 60;
+                const speed = 50; 
+
+                if (intervalRef.current) clearInterval(intervalRef.current);
+
+                intervalRef.current = setInterval(() => {
+                    const randomIndex = Math.floor(Math.random() * playableStudents.length);
+                    setCurrentName(playableStudents[randomIndex].name);
+                    counter++;
+
+                    if (counter >= totalSpins) {
+                        clearInterval(intervalRef.current);
+                        finishSpin(playableStudents[randomIndex]);
+                    }
+                }, speed);
+            };
+
+            const finishSpin = async (selectedStudent) => {
+                setIsSpinning(false);
+                setWinner(selectedStudent);
+                setCurrentName(selectedStudent.name);
+                
+                if (filterUniqueWinners) {
+                    const newWinners = [...todaysWinners, selectedStudent.name];
+                    setTodaysWinners(newWinners);
+                    localStorage.setItem(`winners_${getTodayDateStr()}`, JSON.stringify(newWinners));
+                }
+
+                if (autoSendTelegram) {
+                    await sendToTelegram(selectedStudent.name);
+                } else {
+                    setManualSendVisible(true);
+                }
+            };
+
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-slate-900 flex items-center justify-center p-4 relative">
+                    
+                    {/* Settings Modal */}
+                    {showSettings && (
+                        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
+                            <div className="bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-md p-6 relative my-8">
+                                <button 
+                                    onClick={() => setShowSettings(false)}
+                                    className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors"
+                                >
+                                    <X className="w-6 h-6" />
+                                </button>
+                                
+                                <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                                    <Settings className="w-6 h-6 text-indigo-400" />
+                                    ការកំណត់ (Realtime DB)
+                                </h2>
+                                
+                                <div className="space-y-6">
+                                    {/* Telegram Config */}
+                                    <div className="space-y-3 pb-4 border-b border-slate-700">
+                                        <div className="flex items-center gap-2 text-slate-300 mb-2">
+                                            <Cloud className="w-4 h-4 text-blue-400" />
+                                            <h3 className="text-sm font-semibold">ការភ្ជាប់ Telegram</h3>
+                                        </div>
+                                        <div>
+                                            <label className="block text-slate-400 text-xs mb-1 flex items-center gap-2">
+                                                Bot Token <Lock className="w-3 h-3 text-green-400" />
+                                            </label>
+                                            <div className="relative">
+                                                <input 
+                                                    type={showBotToken ? "text" : "password"}
+                                                    value={botToken}
+                                                    onChange={(e) => setBotToken(e.target.value)}
+                                                    placeholder="Ex: 7048123456:AAGq..."
+                                                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 pr-10 text-white focus:outline-none focus:border-indigo-500 text-sm font-mono no-select"
+                                                    autoComplete="off"
+                                                    onCopy={(e) => e.preventDefault()}
+                                                    onCut={(e) => e.preventDefault()}
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowBotToken(!showBotToken)}
+                                                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-white"
+                                                >
+                                                    {showBotToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-slate-400 text-xs mb-1">Chat ID</label>
+                                            <input 
+                                                type="text" 
+                                                value={chatId}
+                                                onChange={(e) => setChatId(e.target.value)}
+                                                placeholder="Ex: -100123456789"
+                                                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:outline-none focus:border-indigo-500 text-sm font-mono"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* General Toggles */}
+                                    <div className="space-y-4 border-b border-slate-700 pb-4">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex flex-col">
+                                                <span className="text-sm text-white font-medium">ផ្ញើសារស្វ័យប្រវត្តិ</span>
+                                                <span className="text-xs text-slate-400">ផ្ញើទៅ Telegram ភ្លាមៗ</span>
+                                            </div>
+                                            <button onClick={toggleAutoSend} className={`w-12 h-6 rounded-full p-1 transition-colors ${autoSendTelegram ? 'bg-indigo-500' : 'bg-slate-600'}`}>
+                                                <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-200 ${autoSendTelegram ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                                            </button>
+                                        </div>
+
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex flex-col">
+                                                <span className="text-sm text-white font-medium">ហៅតែឈ្មោះថ្មី (Unique)</span>
+                                                <span className="text-xs text-slate-400">មិនហៅឈ្មោះដដែលក្នុងថ្ងៃនេះ</span>
+                                            </div>
+                                            <button onClick={toggleFilterUnique} className={`w-12 h-6 rounded-full p-1 transition-colors ${filterUniqueWinners ? 'bg-indigo-500' : 'bg-slate-600'}`}>
+                                                <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-200 ${filterUniqueWinners ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                                            </button>
+                                        </div>
+                                        
+                                        {filterUniqueWinners && todaysWinners.length > 0 && (
+                                            <div className="flex justify-between items-center bg-slate-900/50 p-2 rounded-lg">
+                                                <span className="text-xs text-slate-400">បានហៅ: {todaysWinners.length} នាក់</span>
+                                                <button onClick={clearTodaysWinners} className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1">
+                                                    <RotateCcw className="w-3 h-3" /> Reset
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Department Filter Section */}
+                                    <div className="space-y-3 pb-4 border-b border-slate-700">
+                                        <div className="flex items-center gap-2 text-slate-300">
+                                            <Briefcase className="w-4 h-4 text-orange-400" />
+                                            <h3 className="text-sm font-semibold">Filter តាមផ្នែកការងារ (Department)</h3>
+                                        </div>
+                                        <div className="space-y-2 pl-2">
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-xs text-slate-300">Training_ជំនួយការលោកគ្រូដារ៉ូ</span>
+                                                <button onClick={toggleDeptTraining} className={`w-10 h-5 rounded-full p-0.5 transition-colors ${filterDeptTraining ? 'bg-orange-500' : 'bg-slate-600'}`}>
+                                                    <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-200 ${filterDeptTraining ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                                                </button>
+                                            </div>
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-xs text-slate-300">រៀនវគ្គបណ្ដុះបណ្ដាលIT_ជំនាន់២</span>
+                                                <button onClick={toggleDeptITGen2} className={`w-10 h-5 rounded-full p-0.5 transition-colors ${filterDeptITGen2 ? 'bg-orange-500' : 'bg-slate-600'}`}>
+                                                    <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-200 ${filterDeptITGen2 ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Group Filter Section */}
+                                    <div className="space-y-3">
+                                        <div className="flex items-center gap-2 text-slate-300">
+                                            <UsersIcon className="w-4 h-4 text-cyan-400" />
+                                            <h3 className="text-sm font-semibold">Filter តាមក្រុម (Group)</h3>
+                                        </div>
+                                        <div className="space-y-2 pl-2">
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-xs text-slate-300">IT Support</span>
+                                                <button onClick={toggleGroupITSupport} className={`w-10 h-5 rounded-full p-0.5 transition-colors ${filterGroupITSupport ? 'bg-cyan-500' : 'bg-slate-600'}`}>
+                                                    <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-200 ${filterGroupITSupport ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                                                </button>
+                                            </div>
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-xs text-slate-300">DRB</span>
+                                                <button onClick={toggleGroupDRB} className={`w-10 h-5 rounded-full p-0.5 transition-colors ${filterGroupDRB ? 'bg-cyan-500' : 'bg-slate-600'}`}>
+                                                    <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-200 ${filterGroupDRB ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <button 
+                                        onClick={handleSaveSettingsButton}
+                                        disabled={isSaving}
+                                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-all mt-4 disabled:opacity-50"
+                                    >
+                                        {isSaving ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                                        {isSaving ? "កំពុងរក្សាទុក..." : "បិទ Settings"}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="bg-white/10 backdrop-blur-md rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-white/20">
+                        
+                        {/* Header */}
+                        <div className="bg-indigo-600/80 p-6 text-center relative">
+                            <h1 className="text-2xl md:text-3xl font-bold text-white flex items-center justify-center gap-3 drop-shadow-md">
+                                <Database className="w-8 h-8" />
+                                <span>កម្មវិធីហៅឈ្មោះ</span>
+                            </h1>
+                            
+                            <div className="flex justify-center gap-3 mt-4 flex-wrap">
+                                <div className="bg-black/30 px-3 py-1 rounded-full text-xs flex items-center gap-2 border border-white/10">
+                                    <Calendar className="w-3 h-3 text-indigo-300" />
+                                    <span>{getTodayDateStr()}</span>
+                                </div>
+                                <div className="bg-black/30 px-3 py-1 rounded-full text-xs flex items-center gap-2 border border-white/10">
+                                    <Clock className="w-3 h-3 text-pink-300" />
+                                    <span>{getCurrentShift()}</span>
+                                </div>
+                            </div>
+
+                            <div className="absolute top-5 right-5">
+                                {loading ? (
+                                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                                ) : (
+                                    <div className={`h-3 w-3 rounded-full shadow-lg border border-white/50 ${allStudents.length > 0 ? 'bg-green-400' : 'bg-red-500'}`} 
+                                            title={allStudents.length > 0 ? "Online Mode" : "No Data"}></div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-8 flex flex-col items-center">
+                            
+                            <div className={`
+                                relative w-full aspect-video rounded-2xl flex flex-col items-center justify-center mb-6 transition-all duration-500
+                                ${winner 
+                                    ? 'bg-gradient-to-tr from-green-500 to-emerald-600 scale-105 shadow-[0_0_40px_rgba(16,185,129,0.5)] border-2 border-white/30' 
+                                    : 'bg-white/5 shadow-inner border border-white/10'
+                                }
+                            `}>
+                                {winner && (
+                                    <div className="absolute -top-8 animate-bounce z-10">
+                                        <Trophy className="w-16 h-16 text-yellow-400 drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)]" />
+                                    </div>
+                                )}
+                                
+                                <UserCircle className={`w-20 h-20 mb-4 transition-colors duration-300 ${winner ? 'text-white' : 'text-white/20'}`} />
+                                
+                                <h2 className={`text-4xl md:text-5xl font-bold text-center transition-all duration-300 ${winner ? 'text-white scale-110 drop-shadow-md' : 'text-white/50'}`}>
+                                    {currentName}
+                                </h2>
+                                
+                                {winner && (
+                                    <div className="mt-4 text-center animate-pulse flex flex-col items-center gap-2">
+                                        <span className="bg-white/20 px-4 py-1 rounded-full text-sm font-medium">
+                                            វេន: {winner.shift}
+                                        </span>
+                                        {/* Status Text for Telegram */}
+                                        {autoSendTelegram && botToken && (
+                                            <span className="text-xs text-blue-300 flex items-center gap-1">
+                                                <Send className="w-3 h-3" />
+                                                {sendingTelegram ? "កំពុងផ្ញើ..." : "បានផ្ញើស្វ័យប្រវត្តិ"}
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Manual Send Button */}
+                            {winner && manualSendVisible && (
+                                <button
+                                    onClick={() => sendToTelegram(winner.name)}
+                                    disabled={sendingTelegram}
+                                    className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg mb-4 transition-all animate-bounce-short"
+                                >
+                                    <Send className="w-5 h-5" />
+                                    {sendingTelegram ? "កំពុងផ្ញើ..." : "ផ្ញើសារទៅ Telegram"}
+                                </button>
+                            )}
+
+                            <button
+                                onClick={handleSpin}
+                                disabled={isSpinning || loading || playableStudents.length === 0}
+                                className={`
+                                    w-full py-4 px-8 rounded-xl text-xl font-bold text-white shadow-xl transform transition-all duration-200 active:scale-95 flex items-center justify-center gap-3 border border-white/20 mb-6
+                                    ${isSpinning || playableStudents.length === 0
+                                        ? 'bg-slate-600/50 cursor-not-allowed opacity-70' 
+                                        : 'bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 hover:shadow-indigo-500/40'
+                                    }
+                                `}
+                            >
+                                {isSpinning ? (
+                                    <>
+                                        <RefreshCw className="w-6 h-6 animate-spin" />
+                                        កំពុងចាប់ឈ្មោះ...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Shuffle className="w-6 h-6" />
+                                        {winner ? 'ចាប់ឈ្មោះម្តងទៀត' : 'ចាប់ផ្តើមហៅឈ្មោះ'}
+                                    </>
+                                )}
+                            </button>
+
+                             {/* Custom Message Input */}
+                             <div className="w-full relative mb-6">
+                                <label className="text-xs text-slate-400 mb-2 block flex items-center gap-1">
+                                    <MessageSquare className="w-3 h-3" />
+                                    សារភ្ជាប់ជាមួយឈ្មោះ (Cloud Sync)
+                                </label>
+                                <input 
+                                    type="text" 
+                                    value={customMessage}
+                                    onChange={(e) => setCustomMessage(e.target.value)}
+                                    onBlur={handleMessageBlur}
+                                    placeholder="ឧទាហរណ៍: សូមមកទទួលរង្វាន់..."
+                                    className="w-full bg-black/20 border border-white/10 rounded-xl p-3 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors text-sm"
+                                />
+                            </div>
+
+                            <div className="mt-2 w-full space-y-3 border-t border-white/10 pt-4">
+                                <div className="flex justify-between items-center text-slate-400 text-xs font-mono">
+                                    <div className="flex flex-col">
+                                        <span>Total Active: {allStudents.length}</span>
+                                        {(filterUniqueWinners || filterDeptTraining || filterDeptITGen2 || filterGroupITSupport || filterGroupDRB) && (
+                                            <span className="text-[10px] text-green-400">Playable: {playableStudents.length} (Filter On)</span>
+                                        )}
+                                    </div>
+                                    <button 
+                                        onClick={() => setShowSettings(true)}
+                                        className="flex items-center gap-1 hover:text-white transition-colors"
+                                    >
+                                        <span className={`w-2 h-2 rounded-full ${settingsLoaded && botToken ? 'bg-green-500' : 'bg-slate-500'}`}></span>
+                                        Settings <Settings className="w-3 h-3" />
+                                    </button>
+                                </div>
+                                
+                                {debugInfo && !error && (
+                                    <div className="bg-blue-500/10 text-blue-200 text-xs p-3 rounded-lg border border-blue-500/20 flex items-center gap-2">
+                                        <CheckCircle2 className="w-4 h-4" />
+                                        {debugInfo}
+                                    </div>
+                                )}
+
+                                {error && (
+                                    <div className="bg-red-500/10 text-red-200 text-xs p-3 rounded-lg border border-red-500/20 flex items-start gap-2">
+                                        <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                                        <span>{error}</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        
+                        <div className="bg-black/20 p-4 text-center text-slate-500 text-[10px] tracking-wider uppercase">
+                            Readom Class Attendance System • {new Date().getFullYear()}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<RandomStudentApp />);
+    </script>
+</body>
+</html>
