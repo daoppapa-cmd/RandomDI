@@ -46,6 +46,20 @@
             -ms-user-select: none;
             user-select: none;
         }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05); 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2); 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.3); 
+        }
     </style>
 </head>
 <body class="bg-slate-900 text-slate-100">
@@ -71,7 +85,8 @@
             Settings, AlertTriangle, Database, Clock, 
             Calendar, CheckCircle2, Send, X, Save, MessageSquare, 
             ToggleLeft, ToggleRight, UserMinus, RotateCcw, Cloud,
-            Eye, EyeOff, Lock, Filter, Briefcase, Users as UsersIcon
+            Eye, EyeOff, Lock, Filter, Briefcase, Users as UsersIcon,
+            UserCog, Search, Check, Ban, ListFilter
         } from 'lucide-react';
 
         // --- Firebase Configuration ---
@@ -126,6 +141,8 @@
 
             // --- Settings State ---
             const [showSettings, setShowSettings] = useState(false);
+            const [showStudentList, setShowStudentList] = useState(false);
+            
             const [botToken, setBotToken] = useState("");
             const [chatId, setChatId] = useState("");
             const [customMessage, setCustomMessage] = useState("");
@@ -135,11 +152,19 @@
             const [filterUniqueWinners, setFilterUniqueWinners] = useState(false);
             const [todaysWinners, setTodaysWinners] = useState([]);
             
-            // --- NEW FILTERS ---
+            // Global Filters (Affects Spinning)
             const [filterDeptTraining, setFilterDeptTraining] = useState(false);
             const [filterDeptITGen2, setFilterDeptITGen2] = useState(false);
             const [filterGroupITSupport, setFilterGroupITSupport] = useState(false);
             const [filterGroupDRB, setFilterGroupDRB] = useState(false);
+
+            // Student List Modal Filters (Local View Only)
+            const [listFilterDept, setListFilterDept] = useState('All');
+            const [listFilterGroup, setListFilterGroup] = useState('All');
+            const [studentSearchTerm, setStudentSearchTerm] = useState("");
+
+            // Excluded Students
+            const [excludedNames, setExcludedNames] = useState([]); 
 
             const [isSaving, setIsSaving] = useState(false);
             const [showBotToken, setShowBotToken] = useState(false);
@@ -160,11 +185,19 @@
                         if (data.autoSendTelegram !== undefined) setAutoSendTelegram(data.autoSendTelegram);
                         if (data.filterUniqueWinners !== undefined) setFilterUniqueWinners(data.filterUniqueWinners);
                         
-                        // Load New Filters
+                        // Load Filters
                         if (data.filterDeptTraining !== undefined) setFilterDeptTraining(data.filterDeptTraining);
                         if (data.filterDeptITGen2 !== undefined) setFilterDeptITGen2(data.filterDeptITGen2);
                         if (data.filterGroupITSupport !== undefined) setFilterGroupITSupport(data.filterGroupITSupport);
                         if (data.filterGroupDRB !== undefined) setFilterGroupDRB(data.filterGroupDRB);
+                        
+                        // Load Excluded Names
+                        if (data.excludedNames) {
+                            const names = Array.isArray(data.excludedNames) ? data.excludedNames : Object.values(data.excludedNames || {});
+                            setExcludedNames(names);
+                        } else {
+                            setExcludedNames([]);
+                        }
                     }
                     setSettingsLoaded(true);
                 });
@@ -176,36 +209,57 @@
                 return () => unsubscribe();
             }, []);
 
-            // --- FILTERING LOGIC ---
+            // --- PLAYABLE LIST LOGIC (Global Filters) ---
             useEffect(() => {
                 let filtered = allStudents;
 
-                // 1. Filter Unique (មិនហៅឈ្មោះដែលធ្លាប់ហៅ)
+                // 1. Exclude Manually Disabled Students
+                if (excludedNames.length > 0) {
+                    filtered = filtered.filter(s => !excludedNames.includes(s.name));
+                }
+
+                // 2. Exclude Today's Winners
                 if (filterUniqueWinners) {
                     filtered = filtered.filter(s => !todaysWinners.includes(s.name));
                 }
 
-                // 2. Filter by Department (ផ្នែកការងារ)
+                // 3. Department Filters (OR Logic within Dept)
                 const activeDeptFilters = [];
                 if (filterDeptTraining) activeDeptFilters.push("Training_ជំនួយការលោកគ្រូដារ៉ូ");
                 if (filterDeptITGen2) activeDeptFilters.push("រៀនវគ្គបណ្ដុះបណ្ដាលIT_ជំនាន់២");
                 
                 if (activeDeptFilters.length > 0) {
-                    filtered = filtered.filter(s => activeDeptFilters.includes(s.department));
+                    filtered = filtered.filter(s => {
+                        const sDept = (s.department || '').trim().toLowerCase();
+                        // Use includes to be safe against slight variations
+                        return activeDeptFilters.some(f => {
+                            const filterVal = f.toLowerCase();
+                            return sDept.includes(filterVal) || filterVal.includes(sDept);
+                        });
+                    });
                 }
 
-                // 3. Filter by Group (ក្រុម)
+                // 4. Group Filters (OR Logic within Group) - UPDATED ROBUST LOGIC
                 const activeGroupFilters = [];
                 if (filterGroupITSupport) activeGroupFilters.push("IT Support");
                 if (filterGroupDRB) activeGroupFilters.push("DRB");
 
                 if (activeGroupFilters.length > 0) {
-                    filtered = filtered.filter(s => activeGroupFilters.includes(s.group));
+                    filtered = filtered.filter(s => {
+                        const studentGroup = (s.group || '').trim().toLowerCase();
+                        // Check if student's group contains the filter keyword OR filter contains student's group
+                        // This handles cases like "IT Support" vs "it support" vs "Group IT Support"
+                        return activeGroupFilters.some(filter => {
+                            const filterVal = filter.toLowerCase();
+                            return studentGroup.includes(filterVal) || filterVal.includes(studentGroup);
+                        });
+                    });
                 }
 
                 setPlayableStudents(filtered);
             }, [
                 allStudents, 
+                excludedNames,
                 filterUniqueWinners, 
                 todaysWinners, 
                 filterDeptTraining, 
@@ -214,7 +268,7 @@
                 filterGroupDRB
             ]);
 
-            // --- 2. Update Specific Setting (Safer than Set) ---
+            // --- UPDATE SETTINGS ---
             const updateSetting = async (updates) => {
                 try {
                     await update(ref(rtdb, 'settings/appConfig'), {
@@ -223,7 +277,6 @@
                     });
                 } catch (err) {
                     console.error("Error updating setting:", err);
-                    alert("មានបញ្ហាក្នុងការរក្សាទុកការកំណត់");
                 }
             };
 
@@ -238,49 +291,33 @@
                     filterDeptTraining,
                     filterDeptITGen2,
                     filterGroupITSupport,
-                    filterGroupDRB
+                    filterGroupDRB,
+                    excludedNames
                 });
                 setIsSaving(false);
                 setShowSettings(false);
             };
 
             // Toggle Functions
-            const toggleAutoSend = () => {
-                const newValue = !autoSendTelegram;
-                setAutoSendTelegram(newValue);
-                updateSetting({ autoSendTelegram: newValue });
-            };
+            const toggleAutoSend = () => { const v = !autoSendTelegram; setAutoSendTelegram(v); updateSetting({ autoSendTelegram: v }); };
+            const toggleFilterUnique = () => { const v = !filterUniqueWinners; setFilterUniqueWinners(v); updateSetting({ filterUniqueWinners: v }); };
+            const toggleDeptTraining = () => { const v = !filterDeptTraining; setFilterDeptTraining(v); updateSetting({ filterDeptTraining: v }); };
+            const toggleDeptITGen2 = () => { const v = !filterDeptITGen2; setFilterDeptITGen2(v); updateSetting({ filterDeptITGen2: v }); };
+            const toggleGroupITSupport = () => { const v = !filterGroupITSupport; setFilterGroupITSupport(v); updateSetting({ filterGroupITSupport: v }); };
+            const toggleGroupDRB = () => { const v = !filterGroupDRB; setFilterGroupDRB(v); updateSetting({ filterGroupDRB: v }); };
 
-            const toggleFilterUnique = () => {
-                const newValue = !filterUniqueWinners;
-                setFilterUniqueWinners(newValue);
-                updateSetting({ filterUniqueWinners: newValue });
-            };
+            const handleMessageBlur = () => { updateSetting({ customMessage }); };
 
-            // New Toggle Wrappers
-            const toggleDeptTraining = () => {
-                const newValue = !filterDeptTraining;
-                setFilterDeptTraining(newValue);
-                updateSetting({ filterDeptTraining: newValue });
-            };
-            const toggleDeptITGen2 = () => {
-                const newValue = !filterDeptITGen2;
-                setFilterDeptITGen2(newValue);
-                updateSetting({ filterDeptITGen2: newValue });
-            };
-            const toggleGroupITSupport = () => {
-                const newValue = !filterGroupITSupport;
-                setFilterGroupITSupport(newValue);
-                updateSetting({ filterGroupITSupport: newValue });
-            };
-            const toggleGroupDRB = () => {
-                const newValue = !filterGroupDRB;
-                setFilterGroupDRB(newValue);
-                updateSetting({ filterGroupDRB: newValue });
-            };
-
-            const handleMessageBlur = () => {
-                updateSetting({ customMessage });
+            // Student List Management
+            const toggleStudentExclusion = (studentName) => {
+                let newExcluded;
+                if (excludedNames.includes(studentName)) {
+                    newExcluded = excludedNames.filter(name => name !== studentName);
+                } else {
+                    newExcluded = [...excludedNames, studentName];
+                }
+                setExcludedNames(newExcluded);
+                updateSetting({ excludedNames: newExcluded });
             };
 
             const clearTodaysWinners = () => {
@@ -290,7 +327,7 @@
                 }
             };
 
-            // --- Telegram Sending Function ---
+            // Telegram Sending
             const sendToTelegram = async (studentName) => {
                 const cleanToken = botToken.trim();
                 const cleanChatId = chatId.trim();
@@ -328,7 +365,7 @@
                 }
             };
 
-            // --- Fetch Students Logic ---
+            // Fetch Students
             useEffect(() => {
                 const fetchStudents = async () => {
                     setLoading(true);
@@ -385,14 +422,14 @@
 
                                 if (isMatch) {
                                     uniqueNames.add(name);
-                                    // បន្ថែម department និង group ដើម្បីយកទៅ Filter
                                     fetchedStudents.push({ 
                                         id: doc.id, 
                                         name: name, 
                                         gender: data.gender || 'N/A', 
                                         shift: studentShift,
-                                        department: data.department || '',
-                                        group: data.group || ''
+                                        department: data.department || 'N/A',
+                                        // Fetching 'group' from Firebase document field (Important!)
+                                        group: data.group || 'N/A'
                                     });
                                 }
                             }
@@ -476,13 +513,133 @@
                 }
             };
 
+            // --- VIEW LIST LOGIC (Local Filters for Modal) ---
+            const getFilteredViewList = () => {
+                return allStudents.filter(s => {
+                    // Search Filter
+                    const matchesSearch = s.name.toLowerCase().includes(studentSearchTerm.toLowerCase());
+                    
+                    // Dept Filter
+                    let matchesDept = true;
+                    const sDept = (s.department || '').toLowerCase().trim();
+                    if (listFilterDept === 'Training') matchesDept = sDept.includes('training');
+                    else if (listFilterDept === 'Gen2') matchesDept = sDept.includes('ជំនាន់២') || sDept.includes('gen2');
+
+                    // Group Filter
+                    let matchesGroup = true;
+                    const sGroup = (s.group || '').toLowerCase().trim();
+                    if (listFilterGroup === 'IT') matchesGroup = sGroup.includes('it support');
+                    else if (listFilterGroup === 'DRB') matchesGroup = sGroup.includes('drb');
+
+                    return matchesSearch && matchesDept && matchesGroup;
+                });
+            };
+
+            const displayedStudents = getFilteredViewList();
+
+            // Render Student List Item
+            const renderStudentListItem = (student) => {
+                const isExcluded = excludedNames.includes(student.name);
+                return (
+                    <div key={student.name} className="flex items-center justify-between bg-slate-700/50 p-3 rounded-lg border border-slate-600/50">
+                        <div className="flex items-center gap-3">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${isExcluded ? 'bg-slate-600 text-slate-400' : 'bg-indigo-500/20 text-indigo-300'}`}>
+                                <UserCircle className="w-5 h-5" />
+                            </div>
+                            <div className="flex flex-col">
+                                <span className={`text-sm font-medium ${isExcluded ? 'text-slate-400 line-through' : 'text-white'}`}>
+                                    {student.name}
+                                </span>
+                                <span className="text-[10px] text-slate-400">
+                                    {student.group} • {student.department}
+                                </span>
+                            </div>
+                        </div>
+                        <button 
+                            onClick={() => toggleStudentExclusion(student.name)}
+                            className={`w-10 h-6 rounded-full p-1 transition-colors duration-200 ease-in-out relative ${!isExcluded ? 'bg-green-500' : 'bg-slate-600'}`}
+                        >
+                            <div className={`bg-white w-4 h-4 rounded-full shadow-sm transform duration-200 ease-in-out ${!isExcluded ? 'translate-x-4' : 'translate-x-0'}`}></div>
+                        </button>
+                    </div>
+                );
+            };
+
             return (
                 <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-slate-900 flex items-center justify-center p-4 relative">
                     
+                    {/* Student List Modal */}
+                    {showStudentList && (
+                        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+                            <div className="bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-md h-[85vh] flex flex-col relative animate-in zoom-in-95 duration-200">
+                                <div className="p-4 border-b border-slate-700 flex items-center justify-between bg-slate-800 rounded-t-2xl z-10">
+                                    <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                                        <UserCog className="w-5 h-5 text-indigo-400" />
+                                        បញ្ជីឈ្មោះ ({displayedStudents.length}/{allStudents.length})
+                                    </h2>
+                                    <button onClick={() => setShowStudentList(false)} className="text-slate-400 hover:text-white p-1">
+                                        <X className="w-6 h-6" />
+                                    </button>
+                                </div>
+                                
+                                <div className="p-3 bg-slate-800/95 sticky top-0 z-10 border-b border-slate-700/50 space-y-3">
+                                    {/* Search */}
+                                    <div className="relative">
+                                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                        <input 
+                                            type="text" 
+                                            placeholder="ស្វែងរកឈ្មោះ..." 
+                                            value={studentSearchTerm}
+                                            onChange={(e) => setStudentSearchTerm(e.target.value)}
+                                            className="w-full bg-slate-900 border border-slate-600 rounded-lg py-2 pl-9 pr-4 text-sm text-white focus:outline-none focus:border-indigo-500"
+                                        />
+                                    </div>
+
+                                    {/* Filters Bar */}
+                                    <div className="flex flex-col gap-2">
+                                        <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+                                            <span className="text-[10px] text-slate-400 whitespace-nowrap flex items-center gap-1"><Briefcase className="w-3 h-3"/> ផ្នែក:</span>
+                                            <button onClick={() => setListFilterDept('All')} className={`px-2 py-1 rounded text-[10px] whitespace-nowrap border ${listFilterDept === 'All' ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-600 text-slate-300'}`}>ទាំងអស់</button>
+                                            <button onClick={() => setListFilterDept('Training')} className={`px-2 py-1 rounded text-[10px] whitespace-nowrap border ${listFilterDept === 'Training' ? 'bg-orange-600 border-orange-600 text-white' : 'border-slate-600 text-slate-300'}`}>Training</button>
+                                            <button onClick={() => setListFilterDept('Gen2')} className={`px-2 py-1 rounded text-[10px] whitespace-nowrap border ${listFilterDept === 'Gen2' ? 'bg-orange-600 border-orange-600 text-white' : 'border-slate-600 text-slate-300'}`}>IT ជំនាន់២</button>
+                                        </div>
+                                        <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+                                            <span className="text-[10px] text-slate-400 whitespace-nowrap flex items-center gap-1"><UsersIcon className="w-3 h-3"/> ក្រុម:</span>
+                                            <button onClick={() => setListFilterGroup('All')} className={`px-2 py-1 rounded text-[10px] whitespace-nowrap border ${listFilterGroup === 'All' ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-600 text-slate-300'}`}>ទាំងអស់</button>
+                                            <button onClick={() => setListFilterGroup('IT')} className={`px-2 py-1 rounded text-[10px] whitespace-nowrap border ${listFilterGroup === 'IT' ? 'bg-cyan-600 border-cyan-600 text-white' : 'border-slate-600 text-slate-300'}`}>IT Support</button>
+                                            <button onClick={() => setListFilterGroup('DRB')} className={`px-2 py-1 rounded text-[10px] whitespace-nowrap border ${listFilterGroup === 'DRB' ? 'bg-cyan-600 border-cyan-600 text-white' : 'border-slate-600 text-slate-300'}`}>DRB</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
+                                    {displayedStudents.length > 0 ? (
+                                        displayedStudents.map(renderStudentListItem)
+                                    ) : (
+                                        <div className="text-center text-slate-500 py-10 flex flex-col items-center gap-2">
+                                            <ListFilter className="w-10 h-10 opacity-20" />
+                                            <span>រកមិនឃើញឈ្មោះតាមលក្ខខណ្ឌ</span>
+                                        </div>
+                                    )}
+                                </div>
+                                
+                                <div className="p-4 border-t border-slate-700 bg-slate-800 rounded-b-2xl">
+                                    <div className="flex justify-between text-xs text-slate-400 mb-3">
+                                        <span>បិទ (Excluded): {excludedNames.length}</span>
+                                        <span>បើក (Active): {allStudents.length - excludedNames.length}</span>
+                                    </div>
+                                    <button onClick={() => setShowStudentList(false)} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-all">
+                                        រួចរាល់
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Settings Modal */}
                     {showSettings && (
                         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
-                            <div className="bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-md p-6 relative my-8">
+                            <div className="bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-md p-6 relative my-8 animate-in zoom-in-95 duration-200">
                                 <button 
                                     onClick={() => setShowSettings(false)}
                                     className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors"
@@ -496,6 +653,26 @@
                                 </h2>
                                 
                                 <div className="space-y-6">
+                                    
+                                    {/* Student List Button */}
+                                    <div className="bg-indigo-600/10 border border-indigo-500/30 rounded-xl p-4 flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className="bg-indigo-500/20 p-2 rounded-full">
+                                                <UserCog className="w-5 h-5 text-indigo-400" />
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="text-sm font-semibold text-white">បញ្ជីឈ្មោះសិស្ស</span>
+                                                <span className="text-xs text-indigo-300">គ្រប់គ្រងការបិទ/បើកឈ្មោះ</span>
+                                            </div>
+                                        </div>
+                                        <button 
+                                            onClick={() => setShowStudentList(true)}
+                                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1"
+                                        >
+                                            បើកមើល <Users className="w-3 h-3" />
+                                        </button>
+                                    </div>
+
                                     {/* Telegram Config */}
                                     <div className="space-y-3 pb-4 border-b border-slate-700">
                                         <div className="flex items-center gap-2 text-slate-300 mb-2">
@@ -751,7 +928,7 @@
                                 <div className="flex justify-between items-center text-slate-400 text-xs font-mono">
                                     <div className="flex flex-col">
                                         <span>Total Active: {allStudents.length}</span>
-                                        {(filterUniqueWinners || filterDeptTraining || filterDeptITGen2 || filterGroupITSupport || filterGroupDRB) && (
+                                        {(filterUniqueWinners || filterDeptTraining || filterDeptITGen2 || filterGroupITSupport || filterGroupDRB || excludedNames.length > 0) && (
                                             <span className="text-[10px] text-green-400">Playable: {playableStudents.length} (Filter On)</span>
                                         )}
                                     </div>
