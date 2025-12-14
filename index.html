@@ -427,14 +427,35 @@
                     if (failures.length === 0) {
                         console.log("Message sent to all active channels successfully!");
                         setManualSendVisible(false);
+
+                        // --- NEW: Mark as Unique only on Success ---
+                        if (filterUniqueWinners) {
+                            // Check if not already added (just in case)
+                            if (!todaysWinners.includes(student.name)) {
+                                const newWinners = [...todaysWinners, student.name];
+                                setTodaysWinners(newWinners);
+                                localStorage.setItem(`winners_${getTodayDateStr()}`, JSON.stringify(newWinners));
+                            }
+                        }
+                        // -------------------------------------------
+
                     } else {
                         console.error("Some messages failed:", failures);
+                        
+                        // If failed, show manual send button so user can retry
+                        setManualSendVisible(true);
+
                         if (manualSendVisible) {
                             alert(`បរាជ័យខ្លះ:\n${failures.map(f => `- ${f.channelName || 'Unnamed'}: ${f.error}`).join('\n')}`);
+                        } else {
+                            // If auto-send failed quietly, maybe we just show the button (handled above) 
+                            // or alert? Let's just show button for now to be less intrusive, 
+                            // or alert if critical. Let's stick to showing button.
                         }
                     }
                 } catch (error) {
                     console.error("Network Error:", error);
+                    setManualSendVisible(true); // Ensure button shows on network error
                     if (manualSendVisible) alert("មានបញ្ហា Network មិនអាចភ្ជាប់ទៅ Telegram បានទេ។");
                 } finally {
                     setSendingTelegram(false);
@@ -575,11 +596,8 @@
                 setWinner(selectedStudent);
                 setCurrentName(selectedStudent.name);
                 
-                if (filterUniqueWinners) {
-                    const newWinners = [...todaysWinners, selectedStudent.name];
-                    setTodaysWinners(newWinners);
-                    localStorage.setItem(`winners_${getTodayDateStr()}`, JSON.stringify(newWinners));
-                }
+                // REMOVED: Immediate Unique Logic
+                // Moved inside sendToTelegram (on success)
 
                 if (autoSendTelegram) {
                     await sendToTelegram(selectedStudent);
@@ -709,214 +727,216 @@
 
                     {/* Settings Modal */}
                     {showSettings && (
-                        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
-                            <div className="bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-md p-6 relative my-8 animate-in zoom-in-95 duration-200">
-                                <button 
-                                    onClick={() => setShowSettings(false)}
-                                    className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors"
-                                >
-                                    <X className="w-6 h-6" />
-                                </button>
-                                
-                                <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-                                    <Settings className="w-6 h-6 text-indigo-400" />
-                                    ការកំណត់ (Realtime DB)
-                                </h2>
-                                
-                                <div className="space-y-6">
+                        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm">
+                            <div className="flex min-h-full items-center justify-center p-4">
+                                <div className="bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-md p-6 relative animate-in zoom-in-95 duration-200">
+                                    <button 
+                                        onClick={() => setShowSettings(false)}
+                                        className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors"
+                                    >
+                                        <X className="w-6 h-6" />
+                                    </button>
                                     
-                                    {/* Student List Button */}
-                                    <div className="bg-indigo-600/10 border border-indigo-500/30 rounded-xl p-4 flex items-center justify-between">
-                                        <div className="flex items-center gap-3">
-                                            <div className="bg-indigo-500/20 p-2 rounded-full">
-                                                <UserCog className="w-5 h-5 text-indigo-400" />
-                                            </div>
-                                            <div className="flex flex-col">
-                                                <span className="text-sm font-semibold text-white">បញ្ជីឈ្មោះសិស្ស</span>
-                                                <span className="text-xs text-indigo-300">គ្រប់គ្រងការបិទ/បើកឈ្មោះ</span>
-                                            </div>
-                                        </div>
-                                        <button 
-                                            onClick={() => setShowStudentList(true)}
-                                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1"
-                                        >
-                                            បើកមើល <Users className="w-3 h-3" />
-                                        </button>
-                                    </div>
-
-                                    {/* Telegram Config */}
-                                    <div className="space-y-3 pb-4 border-b border-slate-700">
-                                        <div className="flex items-center gap-2 text-slate-300 mb-2">
-                                            <Cloud className="w-4 h-4 text-blue-400" />
-                                            <h3 className="text-sm font-semibold">ការភ្ជាប់ Telegram</h3>
-                                        </div>
+                                    <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                                        <Settings className="w-6 h-6 text-indigo-400" />
+                                        ការកំណត់ (Realtime DB)
+                                    </h2>
+                                    
+                                    <div className="space-y-6">
                                         
-                                        {/* Bot Token Input */}
-                                        <div>
-                                            <label className="block text-slate-400 text-xs mb-1 flex items-center gap-2">
-                                                Bot Token <Lock className="w-3 h-3 text-green-400" />
-                                            </label>
-                                            <div className="relative">
-                                                <input 
-                                                    type={showBotToken ? "text" : "password"}
-                                                    value={botToken}
-                                                    onChange={(e) => setBotToken(e.target.value)}
-                                                    placeholder="Ex: 7048123456:AAGq..."
-                                                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 pr-10 text-white focus:outline-none focus:border-indigo-500 text-sm font-mono no-select"
-                                                    autoComplete="off"
-                                                    onCopy={(e) => e.preventDefault()}
-                                                    onCut={(e) => e.preventDefault()}
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setShowBotToken(!showBotToken)}
-                                                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-white"
-                                                >
-                                                    {showBotToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                                </button>
+                                        {/* Student List Button */}
+                                        <div className="bg-indigo-600/10 border border-indigo-500/30 rounded-xl p-4 flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <div className="bg-indigo-500/20 p-2 rounded-full">
+                                                    <UserCog className="w-5 h-5 text-indigo-400" />
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <span className="text-sm font-semibold text-white">បញ្ជីឈ្មោះសិស្ស</span>
+                                                    <span className="text-xs text-indigo-300">គ្រប់គ្រងការបិទ/បើកឈ្មោះ</span>
+                                                </div>
                                             </div>
+                                            <button 
+                                                onClick={() => setShowStudentList(true)}
+                                                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1"
+                                            >
+                                                បើកមើល <Users className="w-3 h-3" />
+                                            </button>
                                         </div>
 
-                                        {/* Channel List */}
-                                        <div className="space-y-2">
-                                            <div className="flex items-center justify-between">
-                                                <label className="block text-slate-400 text-xs">Chat IDs / Channels</label>
-                                                <button 
-                                                    onClick={addChannel}
-                                                    className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
-                                                >
-                                                    <Plus className="w-3 h-3" /> បន្ថែមថ្មី
-                                                </button>
+                                        {/* Telegram Config */}
+                                        <div className="space-y-3 pb-4 border-b border-slate-700">
+                                            <div className="flex items-center gap-2 text-slate-300 mb-2">
+                                                <Cloud className="w-4 h-4 text-blue-400" />
+                                                <h3 className="text-sm font-semibold">ការភ្ជាប់ Telegram</h3>
+                                            </div>
+                                            
+                                            {/* Bot Token Input */}
+                                            <div>
+                                                <label className="block text-slate-400 text-xs mb-1 flex items-center gap-2">
+                                                    Bot Token <Lock className="w-3 h-3 text-green-400" />
+                                                </label>
+                                                <div className="relative">
+                                                    <input 
+                                                        type={showBotToken ? "text" : "password"}
+                                                        value={botToken}
+                                                        onChange={(e) => setBotToken(e.target.value)}
+                                                        placeholder="Ex: 7048123456:AAGq..."
+                                                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 pr-10 text-white focus:outline-none focus:border-indigo-500 text-sm font-mono no-select"
+                                                        autoComplete="off"
+                                                        onCopy={(e) => e.preventDefault()}
+                                                        onCut={(e) => e.preventDefault()}
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowBotToken(!showBotToken)}
+                                                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-white"
+                                                    >
+                                                        {showBotToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                                    </button>
+                                                </div>
                                             </div>
 
-                                            {telegramChannels.map((channel, index) => (
-                                                <div key={channel.id} className="bg-slate-900/50 p-3 rounded-lg border border-slate-700 space-y-2">
-                                                    <div className="flex items-center justify-between gap-2">
+                                            {/* Channel List */}
+                                            <div className="space-y-2">
+                                                <div className="flex items-center justify-between">
+                                                    <label className="block text-slate-400 text-xs">Chat IDs / Channels</label>
+                                                    <button 
+                                                        onClick={addChannel}
+                                                        className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+                                                    >
+                                                        <Plus className="w-3 h-3" /> បន្ថែមថ្មី
+                                                    </button>
+                                                </div>
+
+                                                {telegramChannels.map((channel, index) => (
+                                                    <div key={channel.id} className="bg-slate-900/50 p-3 rounded-lg border border-slate-700 space-y-2">
+                                                        <div className="flex items-center justify-between gap-2">
+                                                            <input 
+                                                                type="text"
+                                                                value={channel.name}
+                                                                onChange={(e) => updateChannel(channel.id, 'name', e.target.value)}
+                                                                placeholder="ឈ្មោះ (ឧ. Group IT)"
+                                                                className="flex-1 bg-transparent border-b border-slate-600 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 py-1"
+                                                            />
+                                                            <div className="flex items-center gap-2">
+                                                                <button 
+                                                                    onClick={() => toggleChannelActive(channel.id)}
+                                                                    className={`p-1.5 rounded-md transition-colors ${channel.active ? 'bg-green-500/20 text-green-400' : 'bg-slate-700 text-slate-500'}`}
+                                                                    title={channel.active ? "កំពុងបើក" : "កំពុងបិទ"}
+                                                                >
+                                                                    <Power className="w-3.5 h-3.5" />
+                                                                </button>
+                                                                <button 
+                                                                    onClick={() => removeChannel(channel.id)}
+                                                                    className="p-1.5 rounded-md hover:bg-red-500/20 text-slate-500 hover:text-red-400 transition-colors"
+                                                                >
+                                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                                </button>
+                                                            </div>
+                                                        </div>
                                                         <input 
                                                             type="text"
-                                                            value={channel.name}
-                                                            onChange={(e) => updateChannel(channel.id, 'name', e.target.value)}
-                                                            placeholder="ឈ្មោះ (ឧ. Group IT)"
-                                                            className="flex-1 bg-transparent border-b border-slate-600 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 py-1"
+                                                            value={channel.chatId}
+                                                            onChange={(e) => updateChannel(channel.id, 'chatId', e.target.value)}
+                                                            placeholder="Chat ID (Ex: -100...)"
+                                                            className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-xs font-mono text-slate-300 focus:outline-none focus:border-indigo-500"
                                                         />
-                                                        <div className="flex items-center gap-2">
-                                                            <button 
-                                                                onClick={() => toggleChannelActive(channel.id)}
-                                                                className={`p-1.5 rounded-md transition-colors ${channel.active ? 'bg-green-500/20 text-green-400' : 'bg-slate-700 text-slate-500'}`}
-                                                                title={channel.active ? "កំពុងបើក" : "កំពុងបិទ"}
-                                                            >
-                                                                <Power className="w-3.5 h-3.5" />
-                                                            </button>
-                                                            <button 
-                                                                onClick={() => removeChannel(channel.id)}
-                                                                className="p-1.5 rounded-md hover:bg-red-500/20 text-slate-500 hover:text-red-400 transition-colors"
-                                                            >
-                                                                <Trash2 className="w-3.5 h-3.5" />
-                                                            </button>
-                                                        </div>
                                                     </div>
-                                                    <input 
-                                                        type="text"
-                                                        value={channel.chatId}
-                                                        onChange={(e) => updateChannel(channel.id, 'chatId', e.target.value)}
-                                                        placeholder="Chat ID (Ex: -100...)"
-                                                        className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-xs font-mono text-slate-300 focus:outline-none focus:border-indigo-500"
-                                                    />
+                                                ))}
+                                                
+                                                {telegramChannels.length === 0 && (
+                                                    <div className="text-center text-xs text-slate-500 py-2 border border-dashed border-slate-700 rounded-lg">
+                                                        មិនទាន់មាន Chat ID នៅឡើយ។
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* General Toggles */}
+                                        <div className="space-y-4 border-b border-slate-700 pb-4">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex flex-col">
+                                                    <span className="text-sm text-white font-medium">ផ្ញើសារស្វ័យប្រវត្តិ</span>
+                                                    <span className="text-xs text-slate-400">ផ្ញើទៅ Telegram ភ្លាមៗ</span>
                                                 </div>
-                                            ))}
+                                                <button onClick={toggleAutoSend} className={`w-12 h-6 rounded-full p-1 transition-colors ${autoSendTelegram ? 'bg-indigo-500' : 'bg-slate-600'}`}>
+                                                    <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-200 ${autoSendTelegram ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                                                </button>
+                                            </div>
+
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex flex-col">
+                                                    <span className="text-sm text-white font-medium">ហៅតែឈ្មោះថ្មី (Unique)</span>
+                                                    <span className="text-xs text-slate-400">មិនហៅឈ្មោះដដែលក្នុងថ្ងៃនេះ</span>
+                                                </div>
+                                                <button onClick={toggleFilterUnique} className={`w-12 h-6 rounded-full p-1 transition-colors ${filterUniqueWinners ? 'bg-indigo-500' : 'bg-slate-600'}`}>
+                                                    <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-200 ${filterUniqueWinners ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                                                </button>
+                                            </div>
                                             
-                                            {telegramChannels.length === 0 && (
-                                                <div className="text-center text-xs text-slate-500 py-2 border border-dashed border-slate-700 rounded-lg">
-                                                    មិនទាន់មាន Chat ID នៅឡើយ។
+                                            {filterUniqueWinners && todaysWinners.length > 0 && (
+                                                <div className="flex justify-between items-center bg-slate-900/50 p-2 rounded-lg">
+                                                    <span className="text-xs text-slate-400">បានហៅ: {todaysWinners.length} នាក់</span>
+                                                    <button onClick={clearTodaysWinners} className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1">
+                                                        <RotateCcw className="w-3 h-3" /> Reset
+                                                    </button>
                                                 </div>
                                             )}
                                         </div>
-                                    </div>
 
-                                    {/* General Toggles */}
-                                    <div className="space-y-4 border-b border-slate-700 pb-4">
-                                        <div className="flex items-center justify-between">
-                                            <div className="flex flex-col">
-                                                <span className="text-sm text-white font-medium">ផ្ញើសារស្វ័យប្រវត្តិ</span>
-                                                <span className="text-xs text-slate-400">ផ្ញើទៅ Telegram ភ្លាមៗ</span>
+                                        {/* Department Filter Section */}
+                                        <div className="space-y-3 pb-4 border-b border-slate-700">
+                                            <div className="flex items-center gap-2 text-slate-300">
+                                                <Briefcase className="w-4 h-4 text-orange-400" />
+                                                <h3 className="text-sm font-semibold">Filter តាមផ្នែកការងារ (Department)</h3>
                                             </div>
-                                            <button onClick={toggleAutoSend} className={`w-12 h-6 rounded-full p-1 transition-colors ${autoSendTelegram ? 'bg-indigo-500' : 'bg-slate-600'}`}>
-                                                <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-200 ${autoSendTelegram ? 'translate-x-6' : 'translate-x-0'}`}></div>
-                                            </button>
+                                            <div className="space-y-2 pl-2">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-xs text-slate-300">Training_ជំនួយការលោកគ្រូដារ៉ូ</span>
+                                                    <button onClick={toggleDeptTraining} className={`w-10 h-5 rounded-full p-0.5 transition-colors ${filterDeptTraining ? 'bg-orange-500' : 'bg-slate-600'}`}>
+                                                        <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-200 ${filterDeptTraining ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                                                    </button>
+                                                </div>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-xs text-slate-300">រៀនវគ្គបណ្ដុះបណ្ដាលIT_ជំនាន់២</span>
+                                                    <button onClick={toggleDeptITGen2} className={`w-10 h-5 rounded-full p-0.5 transition-colors ${filterDeptITGen2 ? 'bg-orange-500' : 'bg-slate-600'}`}>
+                                                        <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-200 ${filterDeptITGen2 ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                                                    </button>
+                                                </div>
+                                            </div>
                                         </div>
 
-                                        <div className="flex items-center justify-between">
-                                            <div className="flex flex-col">
-                                                <span className="text-sm text-white font-medium">ហៅតែឈ្មោះថ្មី (Unique)</span>
-                                                <span className="text-xs text-slate-400">មិនហៅឈ្មោះដដែលក្នុងថ្ងៃនេះ</span>
+                                        {/* Group Filter Section */}
+                                        <div className="space-y-3">
+                                            <div className="flex items-center gap-2 text-slate-300">
+                                                <UsersIcon className="w-4 h-4 text-cyan-400" />
+                                                <h3 className="text-sm font-semibold">Filter តាមក្រុម (Group)</h3>
                                             </div>
-                                            <button onClick={toggleFilterUnique} className={`w-12 h-6 rounded-full p-1 transition-colors ${filterUniqueWinners ? 'bg-indigo-500' : 'bg-slate-600'}`}>
-                                                <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-200 ${filterUniqueWinners ? 'translate-x-6' : 'translate-x-0'}`}></div>
-                                            </button>
+                                            <div className="space-y-2 pl-2">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-xs text-slate-300">IT Support</span>
+                                                    <button onClick={toggleGroupITSupport} className={`w-10 h-5 rounded-full p-0.5 transition-colors ${filterGroupITSupport ? 'bg-cyan-500' : 'bg-slate-600'}`}>
+                                                        <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-200 ${filterGroupITSupport ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                                                    </button>
+                                                </div>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-xs text-slate-300">DRB</span>
+                                                    <button onClick={toggleGroupDRB} className={`w-10 h-5 rounded-full p-0.5 transition-colors ${filterGroupDRB ? 'bg-cyan-500' : 'bg-slate-600'}`}>
+                                                        <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-200 ${filterGroupDRB ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                                                    </button>
+                                                </div>
+                                            </div>
                                         </div>
                                         
-                                        {filterUniqueWinners && todaysWinners.length > 0 && (
-                                            <div className="flex justify-between items-center bg-slate-900/50 p-2 rounded-lg">
-                                                <span className="text-xs text-slate-400">បានហៅ: {todaysWinners.length} នាក់</span>
-                                                <button onClick={clearTodaysWinners} className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1">
-                                                    <RotateCcw className="w-3 h-3" /> Reset
-                                                </button>
-                                            </div>
-                                        )}
+                                        <button 
+                                            onClick={handleSaveSettingsButton}
+                                            disabled={isSaving}
+                                            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-all mt-4 disabled:opacity-50"
+                                        >
+                                            {isSaving ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                                            {isSaving ? "កំពុងរក្សាទុក..." : "បិទ Settings"}
+                                        </button>
                                     </div>
-
-                                    {/* Department Filter Section */}
-                                    <div className="space-y-3 pb-4 border-b border-slate-700">
-                                        <div className="flex items-center gap-2 text-slate-300">
-                                            <Briefcase className="w-4 h-4 text-orange-400" />
-                                            <h3 className="text-sm font-semibold">Filter តាមផ្នែកការងារ (Department)</h3>
-                                        </div>
-                                        <div className="space-y-2 pl-2">
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-xs text-slate-300">Training_ជំនួយការលោកគ្រូដារ៉ូ</span>
-                                                <button onClick={toggleDeptTraining} className={`w-10 h-5 rounded-full p-0.5 transition-colors ${filterDeptTraining ? 'bg-orange-500' : 'bg-slate-600'}`}>
-                                                    <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-200 ${filterDeptTraining ? 'translate-x-5' : 'translate-x-0'}`}></div>
-                                                </button>
-                                            </div>
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-xs text-slate-300">រៀនវគ្គបណ្ដុះបណ្ដាលIT_ជំនាន់២</span>
-                                                <button onClick={toggleDeptITGen2} className={`w-10 h-5 rounded-full p-0.5 transition-colors ${filterDeptITGen2 ? 'bg-orange-500' : 'bg-slate-600'}`}>
-                                                    <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-200 ${filterDeptITGen2 ? 'translate-x-5' : 'translate-x-0'}`}></div>
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Group Filter Section */}
-                                    <div className="space-y-3">
-                                        <div className="flex items-center gap-2 text-slate-300">
-                                            <UsersIcon className="w-4 h-4 text-cyan-400" />
-                                            <h3 className="text-sm font-semibold">Filter តាមក្រុម (Group)</h3>
-                                        </div>
-                                        <div className="space-y-2 pl-2">
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-xs text-slate-300">IT Support</span>
-                                                <button onClick={toggleGroupITSupport} className={`w-10 h-5 rounded-full p-0.5 transition-colors ${filterGroupITSupport ? 'bg-cyan-500' : 'bg-slate-600'}`}>
-                                                    <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-200 ${filterGroupITSupport ? 'translate-x-5' : 'translate-x-0'}`}></div>
-                                                </button>
-                                            </div>
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-xs text-slate-300">DRB</span>
-                                                <button onClick={toggleGroupDRB} className={`w-10 h-5 rounded-full p-0.5 transition-colors ${filterGroupDRB ? 'bg-cyan-500' : 'bg-slate-600'}`}>
-                                                    <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-200 ${filterGroupDRB ? 'translate-x-5' : 'translate-x-0'}`}></div>
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <button 
-                                        onClick={handleSaveSettingsButton}
-                                        disabled={isSaving}
-                                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-all mt-4 disabled:opacity-50"
-                                    >
-                                        {isSaving ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                                        {isSaving ? "កំពុងរក្សាទុក..." : "បិទ Settings"}
-                                    </button>
                                 </div>
                             </div>
                         </div>
